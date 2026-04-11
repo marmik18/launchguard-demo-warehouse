@@ -1,0 +1,11 @@
+ros_distro: humble
+sim_environment: gazebo
+system_deps:
+  - ros-humble-navigation2
+  - ros-humble-nav2-bringup
+  - ros-humble-nav2-simple-commander
+  - ros-humble-turtlebot3-gazebo
+  - ros-humble-turtlebot3-description
+  - ros-humble-aws-robomaker-small-warehouse-world
+test_packages:
+  - warehouse_bot
