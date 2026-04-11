@@ -10,13 +10,13 @@ from std_msgs.msg import String
 from nav2_simple_commander.robot_navigator import BasicNavigator, TaskResult
 
 # Provisional world-frame coordinates (update to map-frame after map generation)
-INITIAL_POSE = (0.0, -2.0, 0.0)
+INITIAL_POSE = (0.0, 0.0, 0.0)
 
 WAYPOINTS = [
-    (3.5, -2.0, 0.0),
-    (3.5, -5.0, -1.57),
-    (0.0, -5.0, 3.14),
-    (0.0, -2.0, 1.57),
+    (3.5, 0.0, 0.0),
+    (3.5, -3.0, -1.57),
+    (0.0, -3.0, 3.14),
+    (0.0, 0.0, 1.57),
 ]
 
 
