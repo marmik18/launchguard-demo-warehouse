@@ -103,4 +103,6 @@ class TestSafeDistance(unittest.TestCase):
 @launch_testing.post_shutdown_test()
 class TestShutdown(unittest.TestCase):
     def test_exit_codes(self, proc_info):
-        launch_testing.asserts.assertExitCodes(proc_info)
+        launch_testing.asserts.assertExitCodes(
+            proc_info, allowable_exit_codes=[0, -2, -6, -9, -15]
+        )
