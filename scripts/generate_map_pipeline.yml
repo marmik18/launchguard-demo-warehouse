@@ -1,0 +1,11 @@
+steps:
+  - label: "Generate Warehouse Map"
+    plugins:
+      - docker#v5.11.0:
+          image: "osrf/ros:humble-simulation"
+          propagate-environment: true
+          mount-buildkite-agent: true
+    command: "bash scripts/generate_map.sh"
+    artifact_paths:
+      - "map_output/warehouse.pgm"
+      - "map_output/warehouse.yaml"
