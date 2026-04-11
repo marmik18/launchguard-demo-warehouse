@@ -64,7 +64,7 @@ SLAM_PID=$!
 sleep 10
 
 echo "--- Running automated exploration (180 seconds)"
-python3 "$SCRIPT_DIR/map_explorer.py" || true
+python3 -u "$SCRIPT_DIR/map_explorer.py" 2>&1 || true
 sleep 5
 
 echo "--- Saving map"

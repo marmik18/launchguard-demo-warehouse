@@ -1,57 +1,49 @@
 #!/usr/bin/env python3
 """
 Scripted warehouse exploration for SLAM map generation.
-Drives a pre-planned route through the warehouse based on known
-world-file coordinates to build a complete map.
+Drives a pre-planned route with scan-based wall detection
+so the robot stops before hitting obstacles.
 """
+import math
+import sys
 import time
 
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
+from sensor_msgs.msg import LaserScan
+from rclpy.qos import qos_profile_sensor_data
 
-LINEAR = 0.22
+LINEAR = 0.20
 TURN = 0.5
+WALL_DIST = 0.35
 
-# (linear_x, angular_z, duration_seconds)
-# Route: start at (0,-2), sweep the warehouse in a lawnmower pattern
+# (type, arg1, arg2)
+# ("drive", speed, seconds)  -- drive forward, stop if wall detected
+# ("turn", angular_vel, seconds)  -- turn in place
 MOVES = [
-    # Drive forward (+x) toward right shelves
-    (LINEAR, 0.0, 25),
-    # Turn left 90 (~face +y)
-    (0.0, TURN, 3.14),
-    # Drive up along right side
-    (LINEAR, 0.0, 30),
-    # Turn left 90 (~face -x)
-    (0.0, TURN, 3.14),
-    # Drive across to left side
-    (LINEAR, 0.0, 40),
-    # Turn left 90 (~face -y)
-    (0.0, TURN, 3.14),
-    # Drive down along left side
-    (LINEAR, 0.0, 35),
-    # Turn left 90 (~face +x)
-    (0.0, TURN, 3.14),
-    # Drive back toward center
-    (LINEAR, 0.0, 20),
-    # Turn right 90 (~face -y)
-    (0.0, -TURN, 3.14),
-    # Drive down through center
-    (LINEAR, 0.0, 35),
-    # Turn right 90 (~face -x)
-    (0.0, -TURN, 3.14),
-    # Drive to left side
-    (LINEAR, 0.0, 25),
-    # Turn right 90 (~face +y)
-    (0.0, -TURN, 3.14),
-    # Drive up again
-    (LINEAR, 0.0, 30),
-    # Turn right 90 (~face +x)
-    (0.0, -TURN, 3.14),
-    # Drive back to center-right
-    (LINEAR, 0.0, 30),
-    # Spin in place to capture surroundings
-    (0.0, TURN, 12.56),
+    # From spawn (0,-2) facing +x, sweep right side
+    ("drive", LINEAR, 20),
+    ("turn", TURN, 3.14),      # face +y
+    ("drive", LINEAR, 25),
+    ("turn", -TURN, 3.14),     # face +x again
+    ("drive", LINEAR, 15),
+    ("turn", TURN, 3.14),      # face +y
+    ("drive", LINEAR, 20),
+    ("turn", TURN, 3.14),      # face -x
+    ("drive", LINEAR, 35),
+    ("turn", TURN, 3.14),      # face -y
+    ("drive", LINEAR, 25),
+    ("turn", TURN, 3.14),      # face +x
+    ("drive", LINEAR, 35),
+    ("turn", -TURN, 3.14),     # face -y
+    ("drive", LINEAR, 25),
+    ("turn", -TURN, 3.14),     # face -x
+    ("drive", LINEAR, 30),
+    ("turn", -TURN, 3.14),     # face +y
+    ("drive", LINEAR, 30),
+    # Final spin to capture surroundings
+    ("turn", TURN, 12.56),
 ]
 
 
@@ -59,24 +51,61 @@ class MapExplorer(Node):
     def __init__(self):
         super().__init__('map_explorer')
         self.pub = self.create_publisher(Twist, '/cmd_vel', 10)
-        self.get_logger().info('Map explorer started.')
+        self.front_dist = float('inf')
+        self.create_subscription(
+            LaserScan, '/scan', self._on_scan, qos_profile_sensor_data
+        )
+
+    def _on_scan(self, msg):
+        ranges = msg.ranges
+        n = len(ranges)
+        if n == 0:
+            return
+        samples_per_deg = n / 360.0
+        front_start = int(n - 20 * samples_per_deg)
+        front_end = int(20 * samples_per_deg)
+        front_vals = []
+        for i in list(range(front_start, n)) + list(range(0, front_end)):
+            r = ranges[i]
+            if not math.isinf(r) and r > 0.01:
+                front_vals.append(r)
+        self.front_dist = min(front_vals) if front_vals else float('inf')
 
     def run(self):
-        for i, (lin, ang, dur) in enumerate(MOVES):
-            self.get_logger().info(
-                f'Move {i+1}/{len(MOVES)}: lin={lin}, ang={ang}, dur={dur:.1f}s'
-            )
-            msg = Twist()
-            msg.linear.x = lin
-            msg.angular.z = ang
-            end = time.time() + dur
-            while time.time() < end:
-                self.pub.publish(msg)
-                time.sleep(0.1)
+        # Wait for scan data
+        print("Waiting for scan data...", flush=True)
+        timeout = time.time() + 30
+        while self.front_dist == float('inf') and time.time() < timeout:
+            rclpy.spin_once(self, timeout_sec=0.5)
+        print(f"Scan ready. Front distance: {self.front_dist:.2f}m", flush=True)
 
-        stop = Twist()
-        self.pub.publish(stop)
-        self.get_logger().info('Exploration complete.')
+        for i, move in enumerate(MOVES):
+            mtype = move[0]
+            print(f"Move {i+1}/{len(MOVES)}: {move}", flush=True)
+
+            msg = Twist()
+            if mtype == "turn":
+                msg.angular.z = move[1]
+                end = time.time() + move[2]
+                while time.time() < end:
+                    self.pub.publish(msg)
+                    rclpy.spin_once(self, timeout_sec=0.05)
+            elif mtype == "drive":
+                msg.linear.x = move[1]
+                end = time.time() + move[2]
+                while time.time() < end:
+                    rclpy.spin_once(self, timeout_sec=0.05)
+                    if self.front_dist < WALL_DIST:
+                        print(f"  Wall detected at {self.front_dist:.2f}m, stopping early", flush=True)
+                        break
+                    self.pub.publish(msg)
+
+            # Brief stop between moves
+            stop = Twist()
+            self.pub.publish(stop)
+            time.sleep(0.5)
+
+        print("Exploration complete.", flush=True)
 
 
 def main():
