@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eo pipefail
 
 # Automated map generation for the AWS Small Warehouse world.
 # Runs inside osrf/ros:humble-simulation Docker image on a Buildkite agent.
