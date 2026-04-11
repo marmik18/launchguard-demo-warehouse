@@ -41,7 +41,7 @@ amcl:
     set_initial_pose: true
     initial_pose:
       x: 0.0
-      y: 0.0
+      y: -2.0
       yaw: 0.0
 
 bt_navigator:
@@ -225,6 +225,11 @@ global_costmap:
       robot_radius: 0.22
       resolution: 0.05
       track_unknown_space: true
+      rolling_window: false
+      width: 10
+      height: 12
+      origin_x: -3.0
+      origin_y: -9.0
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
