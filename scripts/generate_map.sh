@@ -2,8 +2,8 @@
 set -eo pipefail
 
 # Automated map generation for the AWS Small Warehouse world.
-# Runs inside osrf/ros:humble-simulation Docker image on a Buildkite agent.
-# Produces warehouse.pgm + warehouse.yaml as artifacts.
+# Uses Nav2 + SLAM Toolbox to navigate to known coordinates
+# and build a complete map.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
@@ -13,11 +13,11 @@ apt-get update -qq
 apt-get install -y --no-install-recommends \
   ros-humble-navigation2 \
   ros-humble-nav2-bringup \
+  ros-humble-nav2-simple-commander \
   ros-humble-turtlebot3-gazebo \
   ros-humble-turtlebot3-description \
   ros-humble-aws-robomaker-small-warehouse-world \
   ros-humble-slam-toolbox \
-  ros-humble-nav2-simple-commander \
   ros-humble-robot-state-publisher \
   xvfb > /dev/null 2>&1
 
@@ -27,12 +27,14 @@ export GAZEBO_MODEL_DATABASE_URI=""
 
 PKG_TB3=$(ros2 pkg prefix turtlebot3_gazebo)/share/turtlebot3_gazebo
 PKG_WAREHOUSE=$(ros2 pkg prefix aws_robomaker_small_warehouse_world)/share/aws_robomaker_small_warehouse_world
+PKG_NAV2=$(ros2 pkg prefix nav2_bringup)/share/nav2_bringup
 
 export GAZEBO_MODEL_PATH="${PKG_TB3}/models:${PKG_WAREHOUSE}/models:${PKG_WAREHOUSE}:/usr/share/gazebo-11/models:${GAZEBO_MODEL_PATH:-}"
 
 WORLD="${PKG_WAREHOUSE}/worlds/small_warehouse/small_warehouse.world"
 URDF="${PKG_TB3}/urdf/turtlebot3_burger.urdf"
 SDF="${PKG_TB3}/models/turtlebot3_burger/model.sdf"
+NAV2_PARAMS="$REPO_ROOT/src/warehouse_bot/config/nav2_params.yaml"
 
 echo "--- Starting Xvfb"
 Xvfb :99 -screen 0 1280x720x24 &
@@ -61,9 +63,17 @@ sleep 5
 echo "--- Launching SLAM Toolbox"
 ros2 launch slam_toolbox online_async_launch.py use_sim_time:=true &
 SLAM_PID=$!
-sleep 10
+sleep 5
 
-echo "--- Running automated exploration (180 seconds)"
+echo "--- Launching Nav2 (navigation only, no map_server/AMCL)"
+ros2 launch nav2_bringup navigation_launch.py \
+  params_file:="$NAV2_PARAMS" \
+  use_sim_time:=true \
+  autostart:=true &
+NAV2_PID=$!
+sleep 15
+
+echo "--- Running Nav2-based exploration"
 python3 -u "$SCRIPT_DIR/map_explorer.py" 2>&1 || true
 sleep 5
 
@@ -79,7 +89,7 @@ echo "--- Map files generated:"
 ls -la "$REPO_ROOT/map_output/"
 
 echo "--- Cleaning up"
-kill $SLAM_PID $RSP_PID $GZSERVER_PID $XVFB_PID 2>/dev/null || true
+kill $NAV2_PID $SLAM_PID $RSP_PID $GZSERVER_PID $XVFB_PID 2>/dev/null || true
 wait 2>/dev/null || true
 
 if [ -f "$REPO_ROOT/map_output/warehouse.pgm" ]; then
